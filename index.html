@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AyeAuto — Multi-Vehicle Flow</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    
+    <style>
+        :root { --green: #006C35; --gold: #C9A84C; --white: #FFFFFF; --cream: #FAF7F0; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background: #111; display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+
+        .phone-frame {
+            width: 390px; height: 844px; background: var(--white); border-radius: 44px;
+            position: relative; overflow: hidden; border: 8px solid #333; z-index: 10;
+        }
+
+        .screen { position: absolute; inset: 0; display: none; flex-direction: column; background: var(--white); }
+        #scr-login { z-index: 100; display: flex; } 
+        #scr-main { z-index: 50; }
+
+        /* Login */
+        .login-wrap { padding: 40px 30px; display: flex; flex-direction: column; justify-content: center; height: 100%; }
+        .logo { font-size: 42px; font-weight: 800; text-align: center; margin-bottom: 40px; }
+        .logo span { color: var(--gold); }
+        input { width: 100%; padding: 18px; border-radius: 15px; border: 2px solid #eee; margin-bottom: 15px; font-size: 16px; outline: none; background: #fff; }
+
+        /* Map UI */
+        #map { flex: 1; width: 100%; z-index: 1; }
+        .search-area { position: absolute; top: 60px; left: 15px; right: 15px; z-index: 1000; }
+        .search-bar { background: white; padding: 12px 20px; border-radius: 50px; display: flex; align-items: center; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        .search-bar input { border: none; outline: none; flex: 1; margin-left: 10px; font-size: 16px; }
+        .recs { background: white; margin-top: 8px; border-radius: 20px; max-height: 220px; overflow-y: auto; display: none; border: 1px solid #eee; }
+        .rec-item { padding: 15px 20px; border-bottom: 1px solid #f9f9f9; cursor: pointer; }
+
+        /* Sheets */
+        .sheet {
+            position: absolute; bottom: 0; width: 100%; background: white;
+            border-radius: 30px 30px 0 0; padding: 25px; z-index: 2000;
+            box-shadow: 0 -10px 40px rgba(0,0,0,0.1); transform: translateY(105%);
+            transition: transform 0.5s cubic-bezier(0.1, 0.8, 0.3, 1);
+        }
+        .sheet.active { transform: translateY(0); }
+
+        /* Vehicle Selection Grid */
+        .v-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }
+        .v-card { 
+            padding: 15px; border: 2px solid #eee; border-radius: 20px; text-align: center; cursor: pointer; 
+            transition: 0.2s; background: #fff;
+        }
+        .v-card.selected { border-color: var(--green); background: var(--cream); }
+        .v-card i { font-size: 24px; color: var(--green); display: block; margin-bottom: 5px; }
+        .v-card b { font-size: 13px; display: block; }
+        .v-card span { font-size: 11px; color: #777; }
+
+        .btn {
+            width: 100%; padding: 18px; border: none; border-radius: 50px;
+            background: var(--green); color: white; font-weight: 800; 
+            cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px;
+        }
+        .btn:active { transform: scale(0.96); }
+        
+        #badge { background: #e3f2fd; color: #1976d2; padding: 5px 15px; border-radius: 20px; font-size: 11px; font-weight: 800; }
+    </style>
+</head>
+<body>
+
+<div class="phone-frame">
+    
+    <div class="screen" id="scr-login">
+        <div class="login-wrap">
+            <div class="logo">Aye<span>Auto</span></div>
+            <input type="text" id="u-name" placeholder="Full Name">
+            <input type="tel" placeholder="Phone Number">
+            <button class="btn" id="login-trigger">Login</button>
+        </div>
+    </div>
+
+    <div class="screen" id="scr-main">
+        <div class="search-area">
+            <div class="search-bar">
+                <i class="bi bi-geo-alt-fill" style="color: var(--green);"></i>
+                <input type="text" id="s-input" placeholder="Search destination..." oninput="search(this.value)">
+            </div>
+            <div class="recs" id="r-list"></div>
+        </div>
+
+        <div id="map"></div>
+
+        <!-- VEHICLE SELECTION SHEET -->
+        <div class="sheet" id="sh-book">
+            <h3 id="dest-txt" style="text-align:center;">Destination</h3>
+            
+            <div class="v-grid">
+                <div class="v-card selected" onclick="selV(this, 42)">
+                    <i class="bi bi-car-front"></i><b>5 Seater</b><span>Standard</span>
+                </div>
+                <div class="v-card" onclick="selV(this, 65)">
+                    <i class="bi bi-truck-front"></i><b>7 Seater</b><span>Family</span>
+                </div>
+                <div class="v-card" onclick="selV(this, 90)">
+                    <i class="bi bi-gem"></i><b>5 Seater</b><span>Luxury</span>
+                </div>
+                <div class="v-card" onclick="selV(this, 120)">
+                    <i class="bi bi-stars"></i><b>7 Seater</b><span>Luxury</span>
+                </div>
+            </div>
+
+            <p style="text-align:center; color:var(--green); font-weight:900; margin-bottom:15px;">EST. SAR <span id="fare">42</span>.00</p>
+            <button class="btn" onclick="startRide()">Request Ride</button>
+        </div>
+
+        <!-- TRACKING SHEET -->
+        <div class="sheet" id="sh-track">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <span id="badge">EN ROUTE</span>
+                <span id="eta" style="font-weight:800; color:var(--gold);">5 MIN</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:15px;">
+                <img src="https://i.pravatar.cc/100?u=12" style="width:50px; border-radius:50%; border:2px solid var(--gold);">
+                <div style="flex:1">
+                    <h4 id="drv-name">Saleh Ahmed</h4>
+                    <p id="drv-car" style="font-size:12px; color:#666;">Standard • ٤٤١٢ ح ك ل</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- PAYMENT SHEET -->
+        <div class="sheet" id="sh-pay">
+            <div style="text-align:center; margin-bottom:20px;">
+                <div style="width:50px; height:50px; background:#e8f5e9; color:var(--green); border-radius:50%; display:inline-flex; align-items:center; justify-content:center; margin-bottom:10px;">
+                    <i class="bi bi-check-lg" style="font-size:30px;"></i>
+                </div>
+                <h3>Arrived!</h3>
+                <h1 style="font-weight:900; font-size:32px; margin-top:5px;">SAR <span id="final-fare">42</span>.00</h1>
+            </div>
+            <button class="btn" onclick="resetApp()">Complete & Pay</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    const spots = ["Sarji Center", "Saram Palace", "Airport T1", "King Fahd Road"];
+    let map, car, line, trace = [];
+    const me = [24.7136, 46.6753];
+    const drvStart = [24.7200, 46.6900];
+    const drop = [24.7050, 46.6600];
+
+    document.getElementById('login-trigger').addEventListener('click', function() {
+        if(!document.getElementById('u-name').value) return alert("Enter name");
+        document.getElementById('scr-login').style.display = 'none';
+        document.getElementById('scr-main').style.display = 'flex';
+        setTimeout(() => {
+            map = L.map('map', { zoomControl: false }).setView(me, 14);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(map);
+            L.circleMarker(me, { radius: 7, color: '#fff', fillColor: '#007bff', fillOpacity: 1, weight: 3 }).addTo(map);
+        }, 100);
+    });
+
+    function search(v) {
+        const l = document.getElementById('r-list');
+        if(!v) { l.style.display = 'none'; return; }
+        const m = spots.filter(s => s.toLowerCase().startsWith(v.toLowerCase()));
+        l.innerHTML = m.map(x => `<div class="rec-item" onclick="pick('${x}')">${x}</div>`).join('');
+        l.style.display = m.length ? 'block' : 'none';
+    }
+
+    function pick(x) {
+        document.getElementById('s-input').value = x;
+        document.getElementById('r-list').style.display = 'none';
+        document.getElementById('dest-txt').innerText = x;
+        document.getElementById('sh-book').classList.add('active');
+    }
+
+    function selV(el, price) {
+        document.querySelectorAll('.v-card').forEach(c => c.classList.remove('selected'));
+        el.classList.add('selected');
+        document.getElementById('fare').innerText = price;
+        document.getElementById('final-fare').innerText = price;
+        // Update mock driver car info based on selection
+        const type = el.querySelector('span').innerText;
+        document.getElementById('drv-car').innerText = type + " • ٤٤١٢ ح ك ل";
+    }
+
+    function startRide() {
+        document.getElementById('sh-book').classList.remove('active');
+        document.getElementById('sh-track').classList.add('active');
+
+        const icon = L.divIcon({ html: `<div style="background:var(--green); width:20px; height:20px; border:3px solid var(--gold); border-radius:50%;"></div>` });
+        car = L.marker(drvStart, { icon }).addTo(map);
+        line = L.polyline([], { color: '#C9A84C', weight: 4, dashArray: '5,10' }).addTo(map);
+
+        move(drvStart, me, 100, () => {
+            document.getElementById('badge').innerText = "ARRIVED";
+            document.getElementById('badge').style.background = "#c8e6c9";
+            setTimeout(() => {
+                document.getElementById('badge').innerText = "ON TRIP";
+                document.getElementById('badge').style.background = "#fff9c4";
+                move(me, drop, 150, () => {
+                    document.getElementById('sh-track').classList.remove('active');
+                    document.getElementById('sh-pay').classList.add('active');
+                });
+            }, 3000);
+        });
+    }
+
+    function move(s, e, steps, cb) {
+        let i = 0;
+        const t = setInterval(() => {
+            if(i >= steps) { clearInterval(t); cb(); return; }
+            const lat = s[0] + (e[0] - s[0]) * (i / steps);
+            const lng = s[1] + (e[1] - s[1]) * (i / steps);
+            const p = [lat, lng];
+            car.setLatLng(p);
+            trace.push(p);
+            line.setLatLngs(trace);
+            map.panTo(p);
+            i++;
+        }, 60);
+    }
+
+    function resetApp() {
+        // Clear map elements
+        if(car) map.removeLayer(car);
+        if(line) map.removeLayer(line);
+        trace = [];
+        // Reset UI
+        document.getElementById('sh-pay').classList.remove('active');
+        document.getElementById('s-input').value = "";
+        document.getElementById('badge').innerText = "EN ROUTE";
+        document.getElementById('badge').style.background = "#e3f2fd";
+        map.setView(me, 14);
+    }
+</script>
+</body>
+</html>
